@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Адміністративна панель</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: system-ui, sans-serif; margin: 0; background: #f1f1f1; }
+        header { background: #2c3e50; color: white; padding: 1rem; display: flex; justify-content: space-between; align-items: center; }
+        .container { max-width: 800px; margin: 2rem auto; background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+        input, textarea, select { width: 100%; padding: 0.7rem; margin-bottom: 1rem; border: 1px solid #ccc; border-radius: 8px; }
+        button { background: #ff9800; border: none; padding: 0.6rem 1.2rem; border-radius: 30px; cursor: pointer; font-weight: bold; margin-right: 0.5rem; }
+        button:hover { background: #e68900; }
+        .event-item { border: 1px solid #ddd; padding: 1rem; margin-bottom: 1rem; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; }
+        .error { color: red; margin-top: 1rem; }
+        .row { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+    </style>
+</head>
+<body>
+<header>
+    <h2>🛠️ Адміністрування заходів</h2>
+    <button id="logoutBtn" style="background:#e74c3c;">Вийти</button>
+</header>
+
+<div id="loginPanel" class="container">
+    <h2>Вхід в систему</h2>
+    <input type="text" id="username" placeholder="Логін">
+    <input type="password" id="password" placeholder="Пароль">
+    <button id="loginBtn">Увійти</button>
+    <div id="loginError" class="error"></div>
+</div>
+
+<div id="adminPanel" style="display:none;">
+    <div class="container">
+        <h2>➕ Додати нову подію</h2>
+        <input type="text" id="title" placeholder="Назва *">
+        <textarea id="description" rows="3" placeholder="Опис"></textarea>
+        <div class="row">
+            <input type="date" id="start_date" style="flex:1">
+            <input type="time" id="start_time" style="flex:1">
+        </div>
+        <input type="text" id="place" placeholder="Місце проведення">
+        <input type="text" id="image_url" placeholder="URL зображення (афіша)">
+        <select id="category_ids" multiple size="4"></select>
+        <div class="row">
+            <label><input type="checkbox" id="is_online"> Онлайн</label>
+            <label><input type="checkbox" id="is_free"> Безкоштовно</label>
+        </div>
+        <input type="number" id="price" step="0.01" placeholder="Ціна (якщо платне)">
+        <input type="text" id="organizer_name" placeholder="Організатор">
+        <button id="saveEventBtn">💾 Зберегти подію</button>
+    </div>
+
+    <div class="container">
+        <h2>📋 Список подій</h2>
+        <div id="eventsList"></div>
+    </div>
+</div>
+
+<script>
+    let token = null;
+    const API = '/api';
+
+    async function loadCategories() {
+        const res = await fetch(`${API}/categories`);
+        const cats = await res.json();
+        const select = document.getElementById('category_ids');
+        select.innerHTML = cats.map(c => `<option value="${c.id}">${c.name_uk}</option>`).join('');
+    }
+
+    async function loadEventsAdmin() {
+        if (!token) return;
+        const res = await fetch(`${API}/admin/events`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const events = await res.json();
+        const container = document.getElementById('eventsList');
+        if (!events.length) {
+            container.innerHTML = '<p>Немає подій. Додайте першу!</p>';
+            return;
+        }
+        container.innerHTML = events.map(ev => `
+            <div class="event-item">
+                <div><strong>${escapeHtml(ev.title)}</strong><br>${ev.start_date}</div>
+                <button onclick="deleteEvent(${ev.id})" style="background:#e74c3c;">🗑 Видалити</button>
+            </div>
+        `).join('');
+    }
+
+    window.deleteEvent = async function(id) {
+        if (!confirm('Видалити подію?')) return;
+        await fetch(`${API}/admin/events/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+        loadEventsAdmin();
+    };
+
+    function escapeHtml(str) { return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'})[m]); }
+
+    document.getElementById('loginBtn').onclick = async () => {
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
+        const res = await fetch(`${API}/admin/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+        if (res.ok) {
+            const data = await res.json();
+            token = data.token;
+            document.getElementById('loginPanel').style.display = 'none';
+            document.getElementById('adminPanel').style.display = 'block';
+            loadCategories();
+            loadEventsAdmin();
+        } else {
+            document.getElementById('loginError').innerText = 'Невірний логін або пароль';
+        }
+    };
+
+    document.getElementById('saveEventBtn').onclick = async () => {
+        const data = {
+            title: document.getElementById('title').value,
+            description: document.getElementById('description').value,
+            start_date: document.getElementById('start_date').value,
+            start_time: document.getElementById('start_time').value,
+            place: document.getElementById('place').value,
+            image_url: document.getElementById('image_url').value,
+            category_ids: Array.from(document.getElementById('category_ids').selectedOptions).map(o => parseInt(o.value)),
+            is_online: document.getElementById('is_online').checked,
+            is_free: document.getElementById('is_free').checked,
+            price: parseFloat(document.getElementById('price').value) || null,
+            organizer_name: document.getElementById('organizer_name').value
+        };
+        if (!data.title || !data.start_date) {
+            alert('Назва та дата обов’язкові');
+            return;
+        }
+        await fetch(`${API}/admin/events`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify(data)
+        });
+        // очищення форми
+        ['title','description','start_date','start_time','place','image_url','organizer_name'].forEach(id => document.getElementById(id).value = '');
+        document.getElementById('price').value = '';
+        document.getElementById('is_online').checked = false;
+        document.getElementById('is_free').checked = true;
+        Array.from(document.getElementById('category_ids').options).forEach(opt => opt.selected = false);
+        loadEventsAdmin();
+    };
+
+    document.getElementById('logoutBtn').onclick = () => {
+        token = null;
+        document.getElementById('adminPanel').style.display = 'none';
+        document.getElementById('loginPanel').style.display = 'block';
+    };
+</script>
+</body>
+</html>
