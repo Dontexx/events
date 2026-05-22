@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Додавання подій до хмарної бази даних</title>
+    <style>
+        body { font-family: system-ui; max-width: 600px; margin: 2rem auto; padding: 1rem; }
+        input, textarea, button { display: block; width: 100%; margin-bottom: 1rem; padding: 0.5rem; }
+        button { background: #4CAF50; color: white; border: none; cursor: pointer; }
+        .error { color: red; }
+        .success { color: green; }
+    </style>
+</head>
+<body>
+    <h2>➕ Додати подію до хмарного бекенду</h2>
+    <div>
+        <input type="text" id="token" placeholder="Введіть admin token" style="background:#f0f0f0;">
+        <button id="getTokenBtn">Отримати токен</button>
+    </div>
+    <hr>
+    <form id="eventForm">
+        <input type="text" id="title" placeholder="Назва події *" required>
+        <textarea id="description" placeholder="Опис"></textarea>
+        <input type="date" id="start_date" required>
+        <input type="time" id="start_time">
+        <input type="text" id="place" placeholder="Місце проведення">
+        <input type="text" id="image_url" placeholder="URL зображення (необов'язково)">
+        <select id="category_ids" multiple size="4">
+            <option value="1">Театр</option>
+            <option value="2">Концерти</option>
+            <option value="3">Сімейні</option>
+            <option value="4">Спорт</option>
+            <option value="5">Молодіжні</option>
+            <option value="6">Громадські</option>
+            <option value="7">Освіта</option>
+        </select>
+        <button type="submit">Зберегти подію</button>
+    </form>
+    <div id="message"></div>
+
+    <script>
+        const API_BASE = 'https://events-15bd.onrender.com/api';
+        let adminToken = null;
+
+        document.getElementById('getTokenBtn').onclick = async () => {
+            const res = await fetch(`${API_BASE}/admin/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: 'admin', password: 'admin123' })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                adminToken = data.token;
+                document.getElementById('token').value = adminToken;
+                showMessage('✅ Токен отримано', 'success');
+            } else {
+                showMessage('❌ Не вдалося отримати токен. Перевірте логін/пароль', 'error');
+            }
+        };
+
+        document.getElementById('eventForm').onsubmit = async (e) => {
+            e.preventDefault();
+            if (!adminToken) {
+                showMessage('Спочатку отримайте токен', 'error');
+                return;
+            }
+            const data = {
+                title: document.getElementById('title').value,
+                description: document.getElementById('description').value,
+                start_date: document.getElementById('start_date').value,
+                start_time: document.getElementById('start_time').value,
+                place: document.getElementById('place').value,
+                image_url: document.getElementById('image_url').value,
+                category_ids: Array.from(document.getElementById('category_ids').selectedOptions).map(opt => parseInt(opt.value)),
+                is_online: false,
+                is_free: true,
+                price: null,
+                organizer_name: 'Тестовий організатор'
+            };
+            const res = await fetch(`${API_BASE}/admin/events`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${adminToken}`
+                },
+                body: JSON.stringify(data)
+            });
+            if (res.ok) {
+                const result = await res.json();
+                showMessage(`✅ Подію додано! ID: ${result.id}`, 'success');
+                document.getElementById('eventForm').reset();
+            } else {
+                const error = await res.text();
+                showMessage(`❌ Помилка: ${error}`, 'error');
+            }
+        };
+
+        function showMessage(msg, type) {
+            const div = document.getElementById('message');
+            div.innerHTML = `<div class="${type}">${msg}</div>`;
+            setTimeout(() => div.innerHTML = '', 3000);
+        }
+    </script>
+</body>
+</html>
