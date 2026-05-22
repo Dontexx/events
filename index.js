@@ -6,7 +6,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const JWT_SECRET = 'secretkeychangeit';
 const ADMIN_USERNAME = 'admin';
 const ADMIN_PASSWORD = 'admin123'; // змініть за бажанням
