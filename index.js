@@ -235,8 +235,8 @@ app.delete('/api/admin/events/:id', authenticateAdmin, async (req, res) => {
 });
 
 // ===================== Статичні файли (веб-версія) =====================
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
-app.get('/admin.html', (req, res) => res.sendFile(path.join(__dirname, 'admin.html')));
+app.get('/', (req, res) => res.send(' API is running. Use /api/events endpoint.'));
+app.get('/admin.html', (req, res) => res.send(' Admin panel is not available in this deployment.'));
 
 // ===================== Запуск сервера =====================
 app.listen(PORT, '0.0.0.0', () => {
