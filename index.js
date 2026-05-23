@@ -1,8 +1,7 @@
 const express = require('express');
 const cors = require('cors');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
+const jwt = require('jsonwebtoken');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -10,7 +9,6 @@ const JWT_SECRET = process.env.JWT_SECRET || 'superSecretKey123';
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 
-// Пул підключень до PostgreSQL (використовує DATABASE_URL з Render)
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
@@ -18,7 +16,6 @@ const pool = new Pool({
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static(__dirname));
 
 // Ініціалізація таблиць
 const initDb = async () => {
@@ -54,7 +51,6 @@ const initDb = async () => {
         PRIMARY KEY (event_id, category_id)
       );
     `);
-
     const res = await client.query('SELECT COUNT(*) FROM categories');
     if (parseInt(res.rows[0].count) === 0) {
       const categories = [
@@ -79,7 +75,7 @@ const initDb = async () => {
 };
 initDb();
 
-// API маршрути
+// ------------------- API (ті самі) -------------------
 app.get('/api/categories', async (req, res) => {
   const result = await pool.query('SELECT * FROM categories WHERE is_active = true ORDER BY sort_order');
   res.json(result.rows);
@@ -96,7 +92,6 @@ app.get('/api/events', async (req, res) => {
   `;
   let params = [];
   let idx = 1;
-
   if (categories) {
     const cats = categories.split(',').map(Number);
     sql += ` AND e.id IN (SELECT event_id FROM event_categories WHERE category_id = ANY($${idx}::int[]))`;
@@ -120,7 +115,6 @@ app.get('/api/events', async (req, res) => {
   }
   sql += ` GROUP BY e.id ORDER BY e.start_date ASC LIMIT $${idx} OFFSET $${idx+1}`;
   params.push(Number(limit), Number(offset));
-
   const result = await pool.query(sql, params);
   const rows = result.rows.map(row => ({
     ...row,
@@ -146,7 +140,6 @@ app.get('/api/events/:id', async (req, res) => {
   res.json(ev);
 });
 
-// Адмін маршрути
 function authenticateAdmin(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) return res.status(401).json({ error: 'No token' });
@@ -207,5 +200,161 @@ app.delete('/api/admin/events/:id', authenticateAdmin, async (req, res) => {
   if (result.rowCount === 0) return res.status(404).json({ error: 'Event not found' });
   res.json({ success: true });
 });
+
+// ==================== АДМІН-ПАНЕЛЬ (HTML) ====================
+const adminHtml = `<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Адмін-панель заходів</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: system-ui; background: #f5f7fb; margin: 0; padding: 2rem; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        .card { background: white; border-radius: 24px; padding: 1.5rem; margin-bottom: 2rem; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+        input, select, textarea, button { width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 16px; font-size: 1rem; }
+        button { background: #3AA0E6; color: white; font-weight: bold; border: none; cursor: pointer; }
+        button:hover { background: #2b7ab3; }
+        .event-item { background: #f9f9f9; border-radius: 20px; padding: 1rem; margin-bottom: 0.75rem; display: flex; justify-content: space-between; align-items: center; }
+        .delete-btn { background: #e74c3c; width: auto; padding: 0.5rem 1rem; margin-left: 1rem; }
+        .token-section { background: #eef2ff; border-radius: 20px; padding: 1rem; margin-bottom: 1.5rem; display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+        #tokenInput { flex: 2; background: white; }
+        .success { color: #2e7d32; }
+        .error { color: #c62828; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>📋 Адмін-панель заходів</h1>
+    <div class="token-section">
+        <input type="text" id="tokenInput" placeholder="Admin Token" readonly>
+        <button id="getTokenBtn">🔑 Отримати токен</button>
+    </div>
+    <div class="card">
+        <h2>➕ Додати подію</h2>
+        <form id="eventForm" class="form-grid">
+            <input type="text" id="title" placeholder="Назва *" required>
+            <textarea id="description" placeholder="Опис" rows="2"></textarea>
+            <input type="date" id="start_date" required>
+            <input type="time" id="start_time">
+            <input type="text" id="place" placeholder="Місце">
+            <input type="text" id="image_url" placeholder="URL зображення">
+            <select id="category_ids" multiple size="4">
+                <option value="1">Театр</option><option value="2">Концерти</option><option value="3">Сімейні</option>
+                <option value="4">Спорт</option><option value="5">Молодіжні</option><option value="6">Громадські</option>
+                <option value="7">Освіта</option>
+            </select>
+            <input type="text" id="organizer_name" placeholder="Організатор">
+            <button type="submit">💾 Зберегти</button>
+        </form>
+        <div id="formMessage"></div>
+    </div>
+    <div class="card">
+        <h2>📌 Список подій</h2>
+        <div id="eventsList">Завантаження...</div>
+    </div>
+</div>
+<script>
+    const API_BASE = '';
+    let adminToken = localStorage.getItem('adminToken') || '';
+    const tokenInput = document.getElementById('tokenInput');
+    tokenInput.value = adminToken;
+
+    async function getToken() {
+        try {
+            const res = await fetch('/api/admin/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: 'admin', password: 'admin123' })
+            });
+            if (!res.ok) throw new Error('Невірний логін/пароль');
+            const data = await res.json();
+            adminToken = data.token;
+            tokenInput.value = adminToken;
+            localStorage.setItem('adminToken', adminToken);
+            showMessage('Токен отримано', 'success');
+            loadEvents();
+        } catch (err) {
+            showMessage(err.message, 'error');
+        }
+    }
+
+    async function loadEvents() {
+        if (!adminToken) { document.getElementById('eventsList').innerHTML = '<p>Спочатку отримайте токен</p>'; return; }
+        try {
+            const res = await fetch('/api/admin/events', { headers: { 'Authorization': \`Bearer \${adminToken}\` } });
+            if (!res.ok) throw new Error('Не вдалося завантажити');
+            const events = await res.json();
+            const container = document.getElementById('eventsList');
+            if (events.length === 0) { container.innerHTML = '<p>Немає подій</p>'; return; }
+            container.innerHTML = events.map(ev => \`
+                <div class="event-item">
+                    <div><strong>\${escapeHtml(ev.title)}</strong><br>\${ev.start_date} \${ev.start_time || ''} • \${ev.place || ''}</div>
+                    <button class="delete-btn" data-id="\${ev.id}">Видалити</button>
+                </div>
+            \`).join('');
+            document.querySelectorAll('.delete-btn').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    if (confirm('Видалити?')) await deleteEvent(btn.dataset.id);
+                });
+            });
+        } catch (err) { document.getElementById('eventsList').innerHTML = \`<p class="error">\${err.message}</p>\`; }
+    }
+
+    async function deleteEvent(id) {
+        try {
+            const res = await fetch(\`/api/admin/events/\${id}\`, { method: 'DELETE', headers: { 'Authorization': \`Bearer \${adminToken}\` } });
+            if (!res.ok) throw new Error('Помилка видалення');
+            showMessage('Видалено', 'success');
+            loadEvents();
+        } catch (err) { showMessage(err.message, 'error'); }
+    }
+
+    document.getElementById('getTokenBtn').onclick = getToken;
+    document.getElementById('eventForm').onsubmit = async (e) => {
+        e.preventDefault();
+        if (!adminToken) { showMessage('Отримайте токен', 'error'); return; }
+        const data = {
+            title: document.getElementById('title').value,
+            description: document.getElementById('description').value,
+            start_date: document.getElementById('start_date').value,
+            start_time: document.getElementById('start_time').value,
+            place: document.getElementById('place').value,
+            image_url: document.getElementById('image_url').value,
+            category_ids: Array.from(document.getElementById('category_ids').selectedOptions).map(opt => parseInt(opt.value)),
+            organizer_name: document.getElementById('organizer_name').value,
+            is_online: false, is_free: true, price: null
+        };
+        if (!data.title || !data.start_date) { showMessage('Заповніть назву та дату', 'error'); return; }
+        try {
+            const res = await fetch('/api/admin/events', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': \`Bearer \${adminToken}\` },
+                body: JSON.stringify(data)
+            });
+            if (!res.ok) throw new Error(await res.text());
+            showMessage('Подію додано!', 'success');
+            document.getElementById('eventForm').reset();
+            loadEvents();
+        } catch (err) { showMessage(\`Помилка: \${err.message}\`, 'error'); }
+    };
+
+    function showMessage(msg, type) {
+        const div = document.getElementById('formMessage');
+        div.innerHTML = \`<div class="\${type}">\${msg}</div>\`;
+        setTimeout(() => div.innerHTML = '', 3000);
+    }
+    function escapeHtml(str) { return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'})[m]); }
+    if (adminToken) loadEvents();
+</script>
+</body>
+</html>`;
+
+// Віддаємо адмін-панель для кореневого маршруту
+app.get('/', (req, res) => res.send(adminHtml));
+// Також для /admin.html (якщо хтось зайде)
+app.get('/admin.html', (req, res) => res.send(adminHtml));
 
 app.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));
