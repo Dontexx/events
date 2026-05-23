@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
+const multer = require('multer');
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -15,9 +17,10 @@ const pool = new Pool({
 });
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' })); // збільшено ліміт для base64
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Ініціалізація таблиць
+// Ініціалізація таблиць (та ж сама)
 const initDb = async () => {
   const client = await pool.connect();
   try {
@@ -37,7 +40,7 @@ const initDb = async () => {
         start_date DATE NOT NULL,
         start_time TIME,
         place VARCHAR(200),
-        image_url VARCHAR(500),
+        image_url TEXT,
         is_online BOOLEAN DEFAULT FALSE,
         is_free BOOLEAN DEFAULT TRUE,
         price DECIMAL(10,2),
@@ -170,7 +173,12 @@ app.get('/api/admin/events', authenticateAdmin, async (req, res) => {
 });
 
 app.post('/api/admin/events', authenticateAdmin, async (req, res) => {
-  const { title, description, start_date, start_time, place, image_url, category_ids, is_online, is_free, price, organizer_name } = req.body;
+  const { title, description, start_date, start_time, place, image_data, category_ids, is_online, is_free, price, organizer_name } = req.body;
+  // image_data – це base64 рядок (якщо відправляється)
+  let image_url = null;
+  if (image_data && image_data.startsWith('data:image')) {
+    image_url = image_data; // зберігаємо base64 безпосередньо в БД
+  }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -201,7 +209,7 @@ app.delete('/api/admin/events/:id', authenticateAdmin, async (req, res) => {
   res.json({ success: true });
 });
 
-// ==================== АДМІН-ПАНЕЛЬ (HTML) ====================
+// ==================== АДМІН-ПАНЕЛЬ (HTML з підтримкою завантаження зображень) ====================
 const adminHtml = `<!DOCTYPE html>
 <html lang="uk">
 <head>
@@ -215,7 +223,7 @@ const adminHtml = `<!DOCTYPE html>
         .card { background: white; border-radius: 24px; padding: 1.5rem; margin-bottom: 2rem; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
         .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
         input, select, textarea, button { width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 16px; font-size: 1rem; }
-        button { background: #3AA0E6; color: white; font-weight: bold; border: none; cursor: pointer; }
+        button { background: #3AA0E6; color: white; font-weight: bold; border: none; cursor: pointer; transition: 0.2s; }
         button:hover { background: #2b7ab3; }
         .event-item { background: #f9f9f9; border-radius: 20px; padding: 1rem; margin-bottom: 0.75rem; display: flex; justify-content: space-between; align-items: center; }
         .delete-btn { background: #e74c3c; width: auto; padding: 0.5rem 1rem; margin-left: 1rem; }
@@ -223,6 +231,7 @@ const adminHtml = `<!DOCTYPE html>
         #tokenInput { flex: 2; background: white; }
         .success { color: #2e7d32; }
         .error { color: #c62828; }
+        .image-preview { max-width: 100px; margin-top: 0.5rem; border-radius: 12px; }
     </style>
 </head>
 <body>
@@ -240,7 +249,10 @@ const adminHtml = `<!DOCTYPE html>
             <input type="date" id="start_date" required>
             <input type="time" id="start_time">
             <input type="text" id="place" placeholder="Місце">
-            <input type="text" id="image_url" placeholder="URL зображення">
+            <div>
+                <input type="file" id="image_file" accept="image/*">
+                <div id="imagePreview"></div>
+            </div>
             <select id="category_ids" multiple size="4">
                 <option value="1">Театр</option><option value="2">Концерти</option><option value="3">Сімейні</option>
                 <option value="4">Спорт</option><option value="5">Молодіжні</option><option value="6">Громадські</option>
@@ -261,6 +273,24 @@ const adminHtml = `<!DOCTYPE html>
     let adminToken = localStorage.getItem('adminToken') || '';
     const tokenInput = document.getElementById('tokenInput');
     tokenInput.value = adminToken;
+
+    // Прев'ю зображення
+    const fileInput = document.getElementById('image_file');
+    const previewDiv = document.getElementById('imagePreview');
+    fileInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                previewDiv.innerHTML = '<img src="' + event.target.result + '" class="image-preview" />';
+                window.currentImageData = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        } else {
+            previewDiv.innerHTML = '';
+            window.currentImageData = null;
+        }
+    });
 
     async function getToken() {
         try {
@@ -291,7 +321,11 @@ const adminHtml = `<!DOCTYPE html>
             if (events.length === 0) { container.innerHTML = '<p>Немає подій</p>'; return; }
             container.innerHTML = events.map(ev => \`
                 <div class="event-item">
-                    <div><strong>\${escapeHtml(ev.title)}</strong><br>\${ev.start_date} \${ev.start_time || ''} • \${ev.place || ''}</div>
+                    <div>
+                        <strong>\${escapeHtml(ev.title)}</strong><br>
+                        \${ev.start_date} \${ev.start_time || ''} • \${ev.place || ''}<br>
+                        \${ev.image_url ? '<img src="' + ev.image_url + '" style="max-width:50px; border-radius:8px;">' : ''}
+                    </div>
                     <button class="delete-btn" data-id="\${ev.id}">Видалити</button>
                 </div>
             \`).join('');
@@ -316,13 +350,14 @@ const adminHtml = `<!DOCTYPE html>
     document.getElementById('eventForm').onsubmit = async (e) => {
         e.preventDefault();
         if (!adminToken) { showMessage('Отримайте токен', 'error'); return; }
+        const imageData = window.currentImageData || null;
         const data = {
             title: document.getElementById('title').value,
             description: document.getElementById('description').value,
             start_date: document.getElementById('start_date').value,
             start_time: document.getElementById('start_time').value,
             place: document.getElementById('place').value,
-            image_url: document.getElementById('image_url').value,
+            image_data: imageData,
             category_ids: Array.from(document.getElementById('category_ids').selectedOptions).map(opt => parseInt(opt.value)),
             organizer_name: document.getElementById('organizer_name').value,
             is_online: false, is_free: true, price: null
@@ -337,6 +372,8 @@ const adminHtml = `<!DOCTYPE html>
             if (!res.ok) throw new Error(await res.text());
             showMessage('Подію додано!', 'success');
             document.getElementById('eventForm').reset();
+            previewDiv.innerHTML = '';
+            window.currentImageData = null;
             loadEvents();
         } catch (err) { showMessage(\`Помилка: \${err.message}\`, 'error'); }
     };
@@ -354,7 +391,6 @@ const adminHtml = `<!DOCTYPE html>
 
 // Віддаємо адмін-панель для кореневого маршруту
 app.get('/', (req, res) => res.send(adminHtml));
-// Також для /admin.html (якщо хтось зайде)
 app.get('/admin.html', (req, res) => res.send(adminHtml));
 
 app.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));
