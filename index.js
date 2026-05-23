@@ -17,7 +17,7 @@ const pool = new Pool({
 });
 
 app.use(cors());
-app.use(express.json());
+app.use(express.static(__dirname));
 
 // Ініціалізація таблиць
 const initDb = async () => {
