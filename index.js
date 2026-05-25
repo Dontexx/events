@@ -66,7 +66,7 @@ const initDb = async () => {
         await client.query('INSERT INTO categories (name_uk, name_en, color) VALUES ($1, $2, $3)', [uk, en, color]);
       }
     }
-    console.log('✅ PostgreSQL ready');
+    console.log(' PostgreSQL ready');
   } catch (err) {
     console.error('DB init error:', err);
   } finally {
@@ -224,17 +224,35 @@ const adminHtml = `<!DOCTYPE html>
         .success { color: #2e7d32; }
         .error { color: #c62828; }
         select[multiple] { height: auto; min-height: 120px; }
-        .file-label { background: #3AA0E6; color: white; padding: 0.5rem; text-align: center; border-radius: 16px; cursor: pointer; display: inline-block; width: calc(100% - 100px); margin-right: 10px; }
-        .remove-image-btn { background: #e74c3c; width: auto; padding: 0.5rem 1rem; border: none; border-radius: 16px; color: white; cursor: pointer; display: inline-block; vertical-align: top; }
-        #imagePreview { max-width: 100%; max-height: 150px; margin-top: 0.5rem; display: none; }
+        .image-preview-container { position: relative; display: inline-block; width: 100%; margin-top: 0.5rem; }
+        #imagePreview { max-width: 100%; max-height: 150px; display: none; border-radius: 12px; border: 1px solid #ddd; }
+        .remove-image-icon {
+            position: absolute;
+            top: -10px;
+            right: -10px;
+            background: #e74c3c;
+            color: white;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 26px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 18px;
+            display: none;
+            z-index: 10;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+        }
+        .file-label { background: #3AA0E6; color: white; padding: 0.5rem; text-align: center; border-radius: 16px; cursor: pointer; display: inline-block; width: 100%; }
     </style>
 </head>
 <body>
 <div class="container">
-    <h1>📋 Адмін-панель заходів</h1>
+    <h1> Адмін-панель подій</h1>
     <div class="token-section">
         <input type="text" id="tokenInput" placeholder="Admin Token" readonly>
-        <button id="getTokenBtn">🔑 Отримати токен</button>
+        <button id="getTokenBtn"> Отримати токен</button>
     </div>
     <div class="card">
         <h2>➕ Додати подію</h2>
@@ -245,10 +263,12 @@ const adminHtml = `<!DOCTYPE html>
             <input type="time" id="start_time">
             <input type="text" id="place" placeholder="Місце">
             <div>
-                <label class="file-label" for="imageFile">📷 Вибрати зображення (з комп'ютера)</label>
-                <button type="button" class="remove-image-btn" id="removeImageBtn">❌ Видалити</button>
+                <label class="file-label" for="imageFile"> Вибрати зображення </label>
                 <input type="file" id="imageFile" accept="image/*" style="display:none">
-                <img id="imagePreview" alt="Попередній перегляд">
+                <div class="image-preview-container">
+                    <img id="imagePreview" alt="Попередній перегляд">
+                    <div id="removeImageIcon" class="remove-image-icon">✕</div>
+                </div>
             </div>
             <select id="category_ids" multiple size="5">
                 <option value="1">Театр</option><option value="2">Концерти</option><option value="3">Сімейні</option>
@@ -256,12 +276,12 @@ const adminHtml = `<!DOCTYPE html>
                 <option value="7">Освіта</option>
             </select>
             <input type="text" id="organizer_name" placeholder="Організатор">
-            <button type="submit">💾 Зберегти подію</button>
+            <button type="submit"> Зберегти подію</button>
         </form>
         <div id="formMessage"></div>
     </div>
     <div class="card">
-        <h2>📌 Список подій</h2>
+        <h2> Список подій</h2>
         <div id="eventsList">Завантаження...</div>
     </div>
 </div>
@@ -283,10 +303,9 @@ const adminHtml = `<!DOCTYPE html>
     // --- Робота із зображенням ---
     const fileInput = document.getElementById('imageFile');
     const imagePreview = document.getElementById('imagePreview');
-    const removeImageBtn = document.getElementById('removeImageBtn');
+    const removeImageIcon = document.getElementById('removeImageIcon');
     let currentImageBase64 = '';
 
-    // Обробка вибору файлу
     fileInput.addEventListener('change', function(e) {
         const file = e.target.files[0];
         if (file) {
@@ -295,21 +314,39 @@ const adminHtml = `<!DOCTYPE html>
                 currentImageBase64 = ev.target.result;
                 imagePreview.src = currentImageBase64;
                 imagePreview.style.display = 'block';
+                removeImageIcon.style.display = 'block';
             };
             reader.readAsDataURL(file);
         } else {
-            currentImageBase64 = '';
-            imagePreview.style.display = 'none';
+            clearImage();
         }
     });
 
-    // Видалення зображення
-    removeImageBtn.addEventListener('click', function() {
-        fileInput.value = '';          // очистити вибраний файл
+    function clearImage() {
         currentImageBase64 = '';
         imagePreview.style.display = 'none';
+        removeImageIcon.style.display = 'none';
         imagePreview.src = '';
+        fileInput.value = '';
+    }
+
+    removeImageIcon.addEventListener('click', function() {
+        clearImage();
         showMessage('Зображення видалено', 'success');
+    });
+
+    // --- Множинний вибір категорій без Ctrl ---
+    const categorySelect = document.getElementById('category_ids');
+    categorySelect.addEventListener('click', function(e) {
+        if (e.target && e.target.tagName === 'OPTION') {
+            e.preventDefault();
+            const option = e.target;
+            if (option.selected) {
+                option.selected = false;
+            } else {
+                option.selected = true;
+            }
+        }
     });
 
     async function getToken() {
@@ -366,8 +403,8 @@ const adminHtml = `<!DOCTYPE html>
     document.getElementById('eventForm').onsubmit = async (e) => {
         e.preventDefault();
         if (!adminToken) { showMessage('Отримайте токен', 'error'); return; }
-        const categorySelect = document.getElementById('category_ids');
-        const category_ids = Array.from(categorySelect.selectedOptions).map(opt => parseInt(opt.value));
+        const selectedOptions = Array.from(categorySelect.selectedOptions);
+        const category_ids = selectedOptions.map(opt => parseInt(opt.value));
         const data = {
             title: document.getElementById('title').value,
             description: document.getElementById('description').value,
@@ -390,10 +427,7 @@ const adminHtml = `<!DOCTYPE html>
             if (!res.ok) throw new Error(await res.text());
             showMessage('Подію додано!', 'success');
             document.getElementById('eventForm').reset();
-            currentImageBase64 = '';
-            imagePreview.style.display = 'none';
-            imagePreview.src = '';
-            fileInput.value = '';
+            clearImage();
             loadEvents();
         } catch (err) { showMessage(\`Помилка: \${err.message}\`, 'error'); }
     };
@@ -413,5 +447,5 @@ app.get('/', (req, res) => res.send(adminHtml));
 app.get('/admin.html', (req, res) => res.send(adminHtml));
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server running at http://localhost:${PORT}`);
+  console.log(` Server running at http://localhost:${PORT}`);
 });
