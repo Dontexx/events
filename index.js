@@ -223,7 +223,7 @@ const adminHtml = `<!DOCTYPE html>
         .card { background: white; border-radius: 24px; padding: 1.5rem; margin-bottom: 2rem; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
         .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
         input, select, textarea, button { width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 16px; font-size: 1rem; }
-        button { background: #3AA0E6; color: white; font-weight: bold; border: none; cursor: pointer; transition: 0.2s; }
+        button { background: #3AA0E6; color: white; font-weight: bold; border: none; cursor: pointer; }
         button:hover { background: #2b7ab3; }
         .event-item { background: #f9f9f9; border-radius: 20px; padding: 1rem; margin-bottom: 0.75rem; display: flex; justify-content: space-between; align-items: center; }
         .delete-btn { background: #e74c3c; width: auto; padding: 0.5rem 1rem; margin-left: 1rem; }
@@ -231,15 +231,15 @@ const adminHtml = `<!DOCTYPE html>
         #tokenInput { flex: 2; background: white; }
         .success { color: #2e7d32; }
         .error { color: #c62828; }
-        .image-preview { max-width: 100px; margin-top: 0.5rem; border-radius: 12px; }
+        select[multiple] { height: auto; min-height: 120px; }
     </style>
 </head>
 <body>
 <div class="container">
-    <h1>📋 Адмін-панель заходів</h1>
+    <h1> Адмін-панель заходів</h1>
     <div class="token-section">
         <input type="text" id="tokenInput" placeholder="Admin Token" readonly>
-        <button id="getTokenBtn">🔑 Отримати токен</button>
+        <button id="getTokenBtn"> Отримати токен</button>
     </div>
     <div class="card">
         <h2>➕ Додати подію</h2>
@@ -249,22 +249,23 @@ const adminHtml = `<!DOCTYPE html>
             <input type="date" id="start_date" required>
             <input type="time" id="start_time">
             <input type="text" id="place" placeholder="Місце">
-            <div>
-                <input type="file" id="image_file" accept="image/*">
-                <div id="imagePreview"></div>
-            </div>
-            <select id="category_ids" multiple size="4">
-                <option value="1">Театр</option><option value="2">Концерти</option><option value="3">Сімейні</option>
-                <option value="4">Спорт</option><option value="5">Молодіжні</option><option value="6">Громадські</option>
+            <input type="text" id="image_url" placeholder="URL зображення">
+            <select id="category_ids" multiple size="5">
+                <option value="1">Театр</option>
+                <option value="2">Концерти</option>
+                <option value="3">Сімейні</option>
+                <option value="4">Спорт</option>
+                <option value="5">Молодіжні</option>
+                <option value="6">Громадські</option>
                 <option value="7">Освіта</option>
             </select>
             <input type="text" id="organizer_name" placeholder="Організатор">
-            <button type="submit">💾 Зберегти</button>
+            <button type="submit"> Зберегти</button>
         </form>
         <div id="formMessage"></div>
     </div>
     <div class="card">
-        <h2>📌 Список подій</h2>
+        <h2> Список подій</h2>
         <div id="eventsList">Завантаження...</div>
     </div>
 </div>
@@ -273,24 +274,6 @@ const adminHtml = `<!DOCTYPE html>
     let adminToken = localStorage.getItem('adminToken') || '';
     const tokenInput = document.getElementById('tokenInput');
     tokenInput.value = adminToken;
-
-    // Прев'ю зображення
-    const fileInput = document.getElementById('image_file');
-    const previewDiv = document.getElementById('imagePreview');
-    fileInput.addEventListener('change', function(e) {
-        const file = e.target.files[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = function(event) {
-                previewDiv.innerHTML = '<img src="' + event.target.result + '" class="image-preview" />';
-                window.currentImageData = event.target.result;
-            };
-            reader.readAsDataURL(file);
-        } else {
-            previewDiv.innerHTML = '';
-            window.currentImageData = null;
-        }
-    });
 
     async function getToken() {
         try {
@@ -321,11 +304,7 @@ const adminHtml = `<!DOCTYPE html>
             if (events.length === 0) { container.innerHTML = '<p>Немає подій</p>'; return; }
             container.innerHTML = events.map(ev => \`
                 <div class="event-item">
-                    <div>
-                        <strong>\${escapeHtml(ev.title)}</strong><br>
-                        \${ev.start_date} \${ev.start_time || ''} • \${ev.place || ''}<br>
-                        \${ev.image_url ? '<img src="' + ev.image_url + '" style="max-width:50px; border-radius:8px;">' : ''}
-                    </div>
+                    <div><strong>\${escapeHtml(ev.title)}</strong><br>\${ev.start_date} \${ev.start_time || ''} • \${ev.place || ''}</div>
                     <button class="delete-btn" data-id="\${ev.id}">Видалити</button>
                 </div>
             \`).join('');
@@ -350,19 +329,22 @@ const adminHtml = `<!DOCTYPE html>
     document.getElementById('eventForm').onsubmit = async (e) => {
         e.preventDefault();
         if (!adminToken) { showMessage('Отримайте токен', 'error'); return; }
-        const imageData = window.currentImageData || null;
+        // Збираємо вибрані категорії (множинний вибір)
+        const categorySelect = document.getElementById('category_ids');
+        const category_ids = Array.from(categorySelect.selectedOptions).map(opt => parseInt(opt.value));
         const data = {
             title: document.getElementById('title').value,
             description: document.getElementById('description').value,
             start_date: document.getElementById('start_date').value,
             start_time: document.getElementById('start_time').value,
             place: document.getElementById('place').value,
-            image_data: imageData,
-            category_ids: Array.from(document.getElementById('category_ids').selectedOptions).map(opt => parseInt(opt.value)),
+            image_url: document.getElementById('image_url').value,
+            category_ids: category_ids,
             organizer_name: document.getElementById('organizer_name').value,
             is_online: false, is_free: true, price: null
         };
         if (!data.title || !data.start_date) { showMessage('Заповніть назву та дату', 'error'); return; }
+        if (category_ids.length === 0) { showMessage('Виберіть хоча б одну категорію', 'error'); return; }
         try {
             const res = await fetch('/api/admin/events', {
                 method: 'POST',
@@ -372,8 +354,6 @@ const adminHtml = `<!DOCTYPE html>
             if (!res.ok) throw new Error(await res.text());
             showMessage('Подію додано!', 'success');
             document.getElementById('eventForm').reset();
-            previewDiv.innerHTML = '';
-            window.currentImageData = null;
             loadEvents();
         } catch (err) { showMessage(\`Помилка: \${err.message}\`, 'error'); }
     };
