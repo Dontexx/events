@@ -232,6 +232,8 @@ const adminHtml = `<!DOCTYPE html>
         .success { color: #2e7d32; }
         .error { color: #c62828; }
         select[multiple] { height: auto; min-height: 120px; }
+        .file-label { background: #3AA0E6; color: white; padding: 0.5rem; text-align: center; border-radius: 16px; cursor: pointer; margin-bottom: 0.5rem; display: inline-block; width: 100%; }
+        #imagePreview { max-width: 100%; max-height: 150px; margin-top: 0.5rem; display: none; }
     </style>
 </head>
 <body>
@@ -249,7 +251,11 @@ const adminHtml = `<!DOCTYPE html>
             <input type="date" id="start_date" required>
             <input type="time" id="start_time">
             <input type="text" id="place" placeholder="Місце">
-            <input type="text" id="image_url" placeholder="URL зображення">
+            <div>
+                <label class="file-label" for="imageFile"> Вибрати зображення </label>
+                <input type="file" id="imageFile" accept="image/*" style="display:none">
+                <img id="imagePreview" alt="Попередній перегляд">
+            </div>
             <select id="category_ids" multiple size="5">
                 <option value="1">Театр</option>
                 <option value="2">Концерти</option>
@@ -260,7 +266,7 @@ const adminHtml = `<!DOCTYPE html>
                 <option value="7">Освіта</option>
             </select>
             <input type="text" id="organizer_name" placeholder="Організатор">
-            <button type="submit"> Зберегти</button>
+            <button type="submit"> Зберегти подію</button>
         </form>
         <div id="formMessage"></div>
     </div>
@@ -274,6 +280,27 @@ const adminHtml = `<!DOCTYPE html>
     let adminToken = localStorage.getItem('adminToken') || '';
     const tokenInput = document.getElementById('tokenInput');
     tokenInput.value = adminToken;
+
+    // Обробка вибору файлу
+    const fileInput = document.getElementById('imageFile');
+    const imagePreview = document.getElementById('imagePreview');
+    let currentImageBase64 = '';
+
+    fileInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                currentImageBase64 = ev.target.result;
+                imagePreview.src = currentImageBase64;
+                imagePreview.style.display = 'block';
+            };
+            reader.readAsDataURL(file);
+        } else {
+            currentImageBase64 = '';
+            imagePreview.style.display = 'none';
+        }
+    });
 
     async function getToken() {
         try {
@@ -338,7 +365,7 @@ const adminHtml = `<!DOCTYPE html>
             start_date: document.getElementById('start_date').value,
             start_time: document.getElementById('start_time').value,
             place: document.getElementById('place').value,
-            image_url: document.getElementById('image_url').value,
+            image_url: currentImageBase64, // base64 зображення
             category_ids: category_ids,
             organizer_name: document.getElementById('organizer_name').value,
             is_online: false, is_free: true, price: null
@@ -354,6 +381,8 @@ const adminHtml = `<!DOCTYPE html>
             if (!res.ok) throw new Error(await res.text());
             showMessage('Подію додано!', 'success');
             document.getElementById('eventForm').reset();
+            currentImageBase64 = '';
+            imagePreview.style.display = 'none';
             loadEvents();
         } catch (err) { showMessage(\`Помилка: \${err.message}\`, 'error'); }
     };
