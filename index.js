@@ -2,8 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
-const multer = require('multer');
-const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -11,16 +9,15 @@ const JWT_SECRET = process.env.JWT_SECRET || 'superSecretKey123';
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 
+app.use(express.json({ limit: '5mb' }));
+app.use(cors());
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
-app.use(cors());
-app.use(express.json({ limit: '10mb' })); // збільшено ліміт для base64
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-// Ініціалізація таблиць (та ж сама)
+// ===================== Ініціалізація БД =====================
 const initDb = async () => {
   const client = await pool.connect();
   try {
@@ -78,7 +75,7 @@ const initDb = async () => {
 };
 initDb();
 
-// ------------------- API (ті самі) -------------------
+// ===================== API маршрути =====================
 app.get('/api/categories', async (req, res) => {
   const result = await pool.query('SELECT * FROM categories WHERE is_active = true ORDER BY sort_order');
   res.json(result.rows);
@@ -173,12 +170,7 @@ app.get('/api/admin/events', authenticateAdmin, async (req, res) => {
 });
 
 app.post('/api/admin/events', authenticateAdmin, async (req, res) => {
-  const { title, description, start_date, start_time, place, image_data, category_ids, is_online, is_free, price, organizer_name } = req.body;
-  // image_data – це base64 рядок (якщо відправляється)
-  let image_url = null;
-  if (image_data && image_data.startsWith('data:image')) {
-    image_url = image_data; // зберігаємо base64 безпосередньо в БД
-  }
+  const { title, description, start_date, start_time, place, image_url, category_ids, is_online, is_free, price, organizer_name } = req.body;
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -209,7 +201,7 @@ app.delete('/api/admin/events/:id', authenticateAdmin, async (req, res) => {
   res.json({ success: true });
 });
 
-// ==================== АДМІН-ПАНЕЛЬ (HTML з підтримкою завантаження зображень) ====================
+// ===================== Адмін-панель =====================
 const adminHtml = `<!DOCTYPE html>
 <html lang="uk">
 <head>
@@ -232,16 +224,17 @@ const adminHtml = `<!DOCTYPE html>
         .success { color: #2e7d32; }
         .error { color: #c62828; }
         select[multiple] { height: auto; min-height: 120px; }
-        .file-label { background: #3AA0E6; color: white; padding: 0.5rem; text-align: center; border-radius: 16px; cursor: pointer; margin-bottom: 0.5rem; display: inline-block; width: 100%; }
+        .file-label { background: #3AA0E6; color: white; padding: 0.5rem; text-align: center; border-radius: 16px; cursor: pointer; display: inline-block; width: calc(100% - 100px); margin-right: 10px; }
+        .remove-image-btn { background: #e74c3c; width: auto; padding: 0.5rem 1rem; border: none; border-radius: 16px; color: white; cursor: pointer; display: inline-block; vertical-align: top; }
         #imagePreview { max-width: 100%; max-height: 150px; margin-top: 0.5rem; display: none; }
     </style>
 </head>
 <body>
 <div class="container">
-    <h1> Адмін-панель заходів</h1>
+    <h1>📋 Адмін-панель заходів</h1>
     <div class="token-section">
         <input type="text" id="tokenInput" placeholder="Admin Token" readonly>
-        <button id="getTokenBtn"> Отримати токен</button>
+        <button id="getTokenBtn">🔑 Отримати токен</button>
     </div>
     <div class="card">
         <h2>➕ Додати подію</h2>
@@ -252,26 +245,23 @@ const adminHtml = `<!DOCTYPE html>
             <input type="time" id="start_time">
             <input type="text" id="place" placeholder="Місце">
             <div>
-                <label class="file-label" for="imageFile"> Вибрати зображення </label>
+                <label class="file-label" for="imageFile">📷 Вибрати зображення (з комп'ютера)</label>
+                <button type="button" class="remove-image-btn" id="removeImageBtn">❌ Видалити</button>
                 <input type="file" id="imageFile" accept="image/*" style="display:none">
                 <img id="imagePreview" alt="Попередній перегляд">
             </div>
             <select id="category_ids" multiple size="5">
-                <option value="1">Театр</option>
-                <option value="2">Концерти</option>
-                <option value="3">Сімейні</option>
-                <option value="4">Спорт</option>
-                <option value="5">Молодіжні</option>
-                <option value="6">Громадські</option>
+                <option value="1">Театр</option><option value="2">Концерти</option><option value="3">Сімейні</option>
+                <option value="4">Спорт</option><option value="5">Молодіжні</option><option value="6">Громадські</option>
                 <option value="7">Освіта</option>
             </select>
             <input type="text" id="organizer_name" placeholder="Організатор">
-            <button type="submit"> Зберегти подію</button>
+            <button type="submit">💾 Зберегти подію</button>
         </form>
         <div id="formMessage"></div>
     </div>
     <div class="card">
-        <h2> Список подій</h2>
+        <h2>📌 Список подій</h2>
         <div id="eventsList">Завантаження...</div>
     </div>
 </div>
@@ -281,11 +271,22 @@ const adminHtml = `<!DOCTYPE html>
     const tokenInput = document.getElementById('tokenInput');
     tokenInput.value = adminToken;
 
-    // Обробка вибору файлу
+    function formatDate(isoString) {
+        if (!isoString) return '';
+        const date = new Date(isoString);
+        const day = date.getDate().toString().padStart(2, '0');
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const year = date.getFullYear();
+        return \`\${day}.\${month}.\${year}\`;
+    }
+
+    // --- Робота із зображенням ---
     const fileInput = document.getElementById('imageFile');
     const imagePreview = document.getElementById('imagePreview');
+    const removeImageBtn = document.getElementById('removeImageBtn');
     let currentImageBase64 = '';
 
+    // Обробка вибору файлу
     fileInput.addEventListener('change', function(e) {
         const file = e.target.files[0];
         if (file) {
@@ -300,6 +301,15 @@ const adminHtml = `<!DOCTYPE html>
             currentImageBase64 = '';
             imagePreview.style.display = 'none';
         }
+    });
+
+    // Видалення зображення
+    removeImageBtn.addEventListener('click', function() {
+        fileInput.value = '';          // очистити вибраний файл
+        currentImageBase64 = '';
+        imagePreview.style.display = 'none';
+        imagePreview.src = '';
+        showMessage('Зображення видалено', 'success');
     });
 
     async function getToken() {
@@ -331,7 +341,7 @@ const adminHtml = `<!DOCTYPE html>
             if (events.length === 0) { container.innerHTML = '<p>Немає подій</p>'; return; }
             container.innerHTML = events.map(ev => \`
                 <div class="event-item">
-                    <div><strong>\${escapeHtml(ev.title)}</strong><br>\${ev.start_date} \${ev.start_time || ''} • \${ev.place || ''}</div>
+                    <div><strong>\${escapeHtml(ev.title)}</strong><br>\${formatDate(ev.start_date)} \${ev.start_time || ''} • \${ev.place || ''}</div>
                     <button class="delete-btn" data-id="\${ev.id}">Видалити</button>
                 </div>
             \`).join('');
@@ -356,7 +366,6 @@ const adminHtml = `<!DOCTYPE html>
     document.getElementById('eventForm').onsubmit = async (e) => {
         e.preventDefault();
         if (!adminToken) { showMessage('Отримайте токен', 'error'); return; }
-        // Збираємо вибрані категорії (множинний вибір)
         const categorySelect = document.getElementById('category_ids');
         const category_ids = Array.from(categorySelect.selectedOptions).map(opt => parseInt(opt.value));
         const data = {
@@ -365,7 +374,7 @@ const adminHtml = `<!DOCTYPE html>
             start_date: document.getElementById('start_date').value,
             start_time: document.getElementById('start_time').value,
             place: document.getElementById('place').value,
-            image_url: currentImageBase64, // base64 зображення
+            image_url: currentImageBase64,
             category_ids: category_ids,
             organizer_name: document.getElementById('organizer_name').value,
             is_online: false, is_free: true, price: null
@@ -383,6 +392,8 @@ const adminHtml = `<!DOCTYPE html>
             document.getElementById('eventForm').reset();
             currentImageBase64 = '';
             imagePreview.style.display = 'none';
+            imagePreview.src = '';
+            fileInput.value = '';
             loadEvents();
         } catch (err) { showMessage(\`Помилка: \${err.message}\`, 'error'); }
     };
@@ -398,8 +409,9 @@ const adminHtml = `<!DOCTYPE html>
 </body>
 </html>`;
 
-// Віддаємо адмін-панель для кореневого маршруту
 app.get('/', (req, res) => res.send(adminHtml));
 app.get('/admin.html', (req, res) => res.send(adminHtml));
 
-app.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Server running at http://localhost:${PORT}`);
+});
