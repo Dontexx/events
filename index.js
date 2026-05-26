@@ -271,8 +271,12 @@ const adminHtml = `<!DOCTYPE html>
                 </div>
             </div>
             <select id="category_ids" multiple size="5">
-                <option value="1">Театр</option><option value="2">Концерти</option><option value="3">Сімейні</option>
-                <option value="4">Спорт</option><option value="5">Молодіжні</option><option value="6">Громадські</option>
+                <option value="1">Театр</option>
+                <option value="2">Концерти</option>
+                <option value="3">Сімейні</option>
+                <option value="4">Спорт</option>
+                <option value="5">Молодіжні</option>
+                <option value="6">Громадські</option>
                 <option value="7">Освіта</option>
             </select>
             <input type="text" id="organizer_name" placeholder="Організатор">
@@ -335,17 +339,16 @@ const adminHtml = `<!DOCTYPE html>
         showMessage('Зображення видалено', 'success');
     });
 
-    // --- Множинний вибір категорій без Ctrl ---
+    // --- Множинний вибір категорій без Ctrl (простий клік) ---
     const categorySelect = document.getElementById('category_ids');
-    categorySelect.addEventListener('click', function(e) {
-        if (e.target && e.target.tagName === 'OPTION') {
-            e.preventDefault();
-            const option = e.target;
-            if (option.selected) {
-                option.selected = false;
-            } else {
-                option.selected = true;
-            }
+    categorySelect.addEventListener('mousedown', function(e) {
+        const option = e.target;
+        if (option.tagName === 'OPTION') {
+            e.preventDefault();  // Запобігає стандартному виділенню
+            option.selected = !option.selected;
+            // Тригеримо подію change, щоб оновити стан
+            const event = new Event('change', { bubbles: true });
+            categorySelect.dispatchEvent(event);
         }
     });
 
@@ -403,6 +406,7 @@ const adminHtml = `<!DOCTYPE html>
     document.getElementById('eventForm').onsubmit = async (e) => {
         e.preventDefault();
         if (!adminToken) { showMessage('Отримайте токен', 'error'); return; }
+        // Збираємо вибрані категорії
         const selectedOptions = Array.from(categorySelect.selectedOptions);
         const category_ids = selectedOptions.map(opt => parseInt(opt.value));
         const data = {
