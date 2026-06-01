@@ -25,14 +25,14 @@
 </head>
 <body>
 <div class="container">
-    <h1>📋 Адмін-панель заходів</h1>
+    <h1> Адмін-панель заходів</h1>
     <div class="token-section">
         <input type="text" id="tokenInput" placeholder="Admin Token (автоматично отримаєте)" readonly>
-        <button id="getTokenBtn">🔑 Отримати токен</button>
+        <button id="getTokenBtn"> Отримати токен</button>
     </div>
 
     <div class="card">
-        <h2>➕ Додати нову подію</h2>
+        <h2> Додати нову подію</h2>
         <form id="eventForm" class="form-grid">
             <input type="text" id="title" placeholder="Назва *" required>
             <textarea id="description" placeholder="Опис" rows="2"></textarea>
@@ -50,19 +50,19 @@
                 <option value="7">Освіта</option>
             </select>
             <input type="text" id="organizer_name" placeholder="Організатор">
-            <button type="submit">💾 Зберегти подію</button>
+            <button type="submit"> Зберегти подію</button>
         </form>
         <div id="formMessage"></div>
     </div>
 
     <div class="card">
-        <h2>📌 Існуючі події</h2>
+        <h2> Існуючі події</h2>
         <div id="eventsList" class="event-list">Завантаження...</div>
     </div>
 </div>
 
 <script>
-    const API_BASE = window.location.origin + '/api'; // автоматично підхоплює поточний домен
+    const API_BASE = window.location.origin + '/api';
     let adminToken = localStorage.getItem('adminToken') || '';
 
     const tokenInput = document.getElementById('tokenInput');

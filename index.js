@@ -17,7 +17,7 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-// ===================== Ініціалізація БД =====================
+//  Ініціалізація БД  
 const initDb = async () => {
   const client = await pool.connect();
   try {
@@ -75,7 +75,7 @@ const initDb = async () => {
 };
 initDb();
 
-// ===================== API маршрути =====================
+//  API маршрути  
 app.get('/api/categories', async (req, res) => {
   const result = await pool.query('SELECT * FROM categories WHERE is_active = true ORDER BY sort_order');
   res.json(result.rows);
@@ -201,7 +201,7 @@ app.delete('/api/admin/events/:id', authenticateAdmin, async (req, res) => {
   res.json({ success: true });
 });
 
-// ===================== Адмін-панель =====================
+//  Адмін-панель 
 const adminHtml = `<!DOCTYPE html>
 <html lang="uk">
 <head>
@@ -255,7 +255,7 @@ const adminHtml = `<!DOCTYPE html>
         <button id="getTokenBtn"> Отримати токен</button>
     </div>
     <div class="card">
-        <h2>➕ Додати подію</h2>
+        <h2> Додати подію</h2>
         <form id="eventForm" class="form-grid">
             <input type="text" id="title" placeholder="Назва *" required>
             <textarea id="description" placeholder="Опис" rows="2"></textarea>
@@ -339,14 +339,12 @@ const adminHtml = `<!DOCTYPE html>
         showMessage('Зображення видалено', 'success');
     });
 
-    // --- Множинний вибір категорій без Ctrl (простий клік) ---
     const categorySelect = document.getElementById('category_ids');
     categorySelect.addEventListener('mousedown', function(e) {
         const option = e.target;
         if (option.tagName === 'OPTION') {
-            e.preventDefault();  // Запобігає стандартному виділенню
+            e.preventDefault();
             option.selected = !option.selected;
-            // Тригеримо подію change, щоб оновити стан
             const event = new Event('change', { bubbles: true });
             categorySelect.dispatchEvent(event);
         }
@@ -406,7 +404,6 @@ const adminHtml = `<!DOCTYPE html>
     document.getElementById('eventForm').onsubmit = async (e) => {
         e.preventDefault();
         if (!adminToken) { showMessage('Отримайте токен', 'error'); return; }
-        // Збираємо вибрані категорії
         const selectedOptions = Array.from(categorySelect.selectedOptions);
         const category_ids = selectedOptions.map(opt => parseInt(opt.value));
         const data = {

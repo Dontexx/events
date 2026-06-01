@@ -13,7 +13,7 @@
     </style>
 </head>
 <body>
-    <h2>➕ Додати подію до хмарного бекенду</h2>
+    <h2> Додати подію до хмарного бекенду</h2>
     <div>
         <input type="text" id="token" placeholder="Введіть admin token" style="background:#f0f0f0;">
         <button id="getTokenBtn">Отримати токен</button>
@@ -53,9 +53,9 @@
                 const data = await res.json();
                 adminToken = data.token;
                 document.getElementById('token').value = adminToken;
-                showMessage('✅ Токен отримано', 'success');
+                showMessage(' Токен отримано', 'success');
             } else {
-                showMessage('❌ Не вдалося отримати токен. Перевірте логін/пароль', 'error');
+                showMessage(' Не вдалося отримати токен. Перевірте логін/пароль', 'error');
             }
         };
 
@@ -88,11 +88,11 @@
             });
             if (res.ok) {
                 const result = await res.json();
-                showMessage(`✅ Подію додано! ID: ${result.id}`, 'success');
+                showMessage(` Подію додано! ID: ${result.id}`, 'success');
                 document.getElementById('eventForm').reset();
             } else {
                 const error = await res.text();
-                showMessage(`❌ Помилка: ${error}`, 'error');
+                showMessage(` Помилка: ${error}`, 'error');
             }
         };
 

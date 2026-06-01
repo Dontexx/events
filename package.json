@@ -1,7 +1,7 @@
 {
     "name": "events-app",
     "version": "1.0.0",
-    "description": "City events app with SQLite",
+    "description": "City events app with PostgreSQL",
     "main": "index.js",
     "scripts": {
         "start": "node index.js"

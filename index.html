@@ -26,8 +26,8 @@
 </head>
 <body>
 <header>
-    <h1>📅 Заходи міста</h1>
-    <nav><a href="admin.html">🔐 Адмін</a></nav>
+    <h1> Заходи міста</h1>
+    <nav><a href="admin.html"> Адмін</a></nav>
 </header>
 <main>
     <div class="filters">
@@ -35,7 +35,7 @@
         <select id="categorySelect" multiple size="3" style="min-width: 180px;"></select>
         <input type="date" id="dateFrom">
         <input type="date" id="dateTo">
-        <button id="applyFilters">🔍 Застосувати</button>
+        <button id="applyFilters"> Застосувати</button>
     </div>
     <div id="eventsList" class="events-grid">
         <div class="loading">Завантаження...</div>
@@ -62,7 +62,7 @@
         const events = await res.json();
         const container = document.getElementById('eventsList');
         if (!events.length) {
-            container.innerHTML = '<div class="loading">😕 Немає подій за вашими критеріями</div>';
+            container.innerHTML = '<div class="loading"> Немає подій за вашими критеріями</div>';
             return;
         }
         container.innerHTML = events.map(ev => `
