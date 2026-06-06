@@ -17,7 +17,7 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-//  Ініціалізація БД  
+// Ініціалізація БД 
 const initDb = async () => {
   const client = await pool.connect();
   try {
@@ -50,6 +50,11 @@ const initDb = async () => {
         category_id INTEGER REFERENCES categories(id) ON DELETE CASCADE,
         PRIMARY KEY (event_id, category_id)
       );
+      CREATE TABLE IF NOT EXISTS user_subscriptions (
+        user_id INTEGER NOT NULL,
+        category_id INTEGER REFERENCES categories(id) ON DELETE CASCADE,
+        PRIMARY KEY (user_id, category_id)
+      );
     `);
     const res = await client.query('SELECT COUNT(*) FROM categories');
     if (parseInt(res.rows[0].count) === 0) {
@@ -75,7 +80,7 @@ const initDb = async () => {
 };
 initDb();
 
-//  API маршрути  
+// Публічні API 
 app.get('/api/categories', async (req, res) => {
   const result = await pool.query('SELECT * FROM categories WHERE is_active = true ORDER BY sort_order');
   res.json(result.rows);
@@ -140,6 +145,7 @@ app.get('/api/events/:id', async (req, res) => {
   res.json(ev);
 });
 
+// Адмін API 
 function authenticateAdmin(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) return res.status(401).json({ error: 'No token' });
@@ -201,7 +207,77 @@ app.delete('/api/admin/events/:id', authenticateAdmin, async (req, res) => {
   res.json({ success: true });
 });
 
-//  Адмін-панель 
+app.post('/api/login', (req, res) => {
+  const { username, password } = req.body;
+  if (username === 'user' && password === 'user123') {
+    const token = jwt.sign({ userId: 1, role: 'user' }, JWT_SECRET, { expiresIn: '8h' });
+    res.json({ token });
+  } else {
+    res.status(401).json({ error: 'Invalid credentials' });
+  }
+});
+
+function authenticateUser(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (!decoded.userId) throw new Error('Missing userId');
+    req.userId = decoded.userId;
+    next();
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+}
+
+app.get('/api/subscriptions', authenticateUser, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT category_id FROM user_subscriptions WHERE user_id = $1',
+      [req.userId]
+    );
+    res.json(result.rows.map(row => row.category_id));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+app.post('/api/subscriptions', authenticateUser, async (req, res) => {
+  const { categoryId } = req.body;
+  if (!categoryId) {
+    return res.status(400).json({ error: 'categoryId is required' });
+  }
+  try {
+    await pool.query(
+      'INSERT INTO user_subscriptions (user_id, category_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+      [req.userId, categoryId]
+    );
+    res.status(201).send();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to add subscription' });
+  }
+});
+
+app.delete('/api/subscriptions/:categoryId', authenticateUser, async (req, res) => {
+  const categoryId = parseInt(req.params.categoryId);
+  try {
+    await pool.query(
+      'DELETE FROM user_subscriptions WHERE user_id = $1 AND category_id = $2',
+      [req.userId, categoryId]
+    );
+    res.status(200).send();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to delete subscription' });
+  }
+});
+
+// Веб-адмін-панель
 const adminHtml = `<!DOCTYPE html>
 <html lang="uk">
 <head>
